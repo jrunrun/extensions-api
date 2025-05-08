@@ -3,8 +3,10 @@ import { DataSource } from '@tableau/extensions-api-types';
 // Wrap everything in an anonymous function to avoid polluting the global namespace
 (async () => {
   class DataSources {
-    // Avoid globals.
-    constructor(private _$: JQueryStatic) { }
+    // Initialize any required properties in constructor
+    constructor() {
+      // No initialization needed at this time
+    }
 
     /**
      * Refreshes the given dataSource
@@ -20,7 +22,13 @@ import { DataSource } from '@tableau/extensions-api-types';
      */
     public async initialize() {
       console.log('Waiting for DOM ready');
-      await this._$.ready;
+      // Wait for DOM content to be loaded
+      if (document.readyState === 'loading') {
+        await new Promise(resolve => {
+          document.addEventListener('DOMContentLoaded', resolve);
+        });
+      }
+
       console.log('Initializing extension API');
       await tableau.extensions.initializeAsync();
 
@@ -37,7 +45,7 @@ import { DataSource } from '@tableau/extensions-api-types';
       const fetchResults = await Promise.all(dataSourceFetchPromises);
 
       // Maps dataSource id to dataSource so we can keep track of unique dataSources.
-      const dataSourcesCheck = {};
+      const dataSourcesCheck: Record<string, boolean> = {};
       const dashboardDataSources: DataSource[] = [];
 
       fetchResults.forEach(dss => {
@@ -53,10 +61,15 @@ import { DataSource } from '@tableau/extensions-api-types';
       this.buildDataSourcesTable(dashboardDataSources);
 
       // This just modifies the UI by removing the loading banner and showing the dataSources table.
-      this._$('#loading').addClass('hidden');
-      this._$('#dataSourcesTable')
-        .removeClass('hidden')
-        .addClass('show');
+      const loadingElement = document.getElementById('loading');
+      if (loadingElement) {
+        loadingElement.classList.add('hidden');
+      }
+      const dataSourcesTable = document.getElementById('dataSourcesTable');
+      if (dataSourcesTable) {
+        dataSourcesTable.classList.remove('hidden');
+        dataSourcesTable.classList.add('show');
+      }
     }
 
     /**
@@ -64,11 +77,14 @@ import { DataSource } from '@tableau/extensions-api-types';
      * @param dataSource
      */
     private async showModal(dataSource: DataSource) {
-      const modal = this._$('#infoModal');
+      const modal = document.getElementById('infoModal');
+      if (!modal) {
+        return;
+      }
 
-      this._$('#nameDetail').text(dataSource.name);
-      this._$('#idDetail').text(dataSource.id);
-      this._$('#typeDetail').text((dataSource.isExtract) ? 'Extract' : 'Live');
+      document.getElementById('nameDetail')!.textContent = dataSource.name;
+      document.getElementById('idDetail')!.textContent = dataSource.id;
+      document.getElementById('typeDetail')!.textContent = (dataSource.isExtract) ? 'Extract' : 'Live';
 
       // Loop through every field in the dataSource and concat it to a string.
       let fieldNamesStr = '';
@@ -76,7 +92,7 @@ import { DataSource } from '@tableau/extensions-api-types';
         fieldNamesStr += field.name + ', ';
       });
       // Slice off the last ", " for formatting.
-      this._$('#fieldsDetail').text(fieldNamesStr.slice(0, -2));
+      document.getElementById('fieldsDetail')!.textContent = fieldNamesStr.slice(0, -2);
 
       // Loop through each connection summary and list the connection's
       // name and type in the info field
@@ -86,7 +102,7 @@ import { DataSource } from '@tableau/extensions-api-types';
         connectionsStr += summary.name + ': ' + summary.type + ', ';
       });
       // Slice of the last ", " for formatting.
-      this._$('#connectionsDetail').text(connectionsStr.slice(0, -2));
+      document.getElementById('connectionsDetail')!.textContent = connectionsStr.slice(0, -2);
 
       // Loop through each table that was used in creating this datasource
       const activeTables = await dataSource.getActiveTablesAsync();
@@ -95,10 +111,12 @@ import { DataSource } from '@tableau/extensions-api-types';
         tableStr += table.name + ', ';
       });
       // Slice of the last ", " for formatting.
-      this._$('#activeTablesDetail').text(tableStr.slice(0, -2));
+      document.getElementById('activeTablesDetail')!.textContent = tableStr.slice(0, -2);
 
+      // Show the modal using Bootstrap 5's modal API
       // @ts-ignore
-      modal.modal('show');
+      const bsModal = new bootstrap.Modal(modal);
+      bsModal.show();
     }
 
     /**
@@ -107,17 +125,20 @@ import { DataSource } from '@tableau/extensions-api-types';
      * @param dataSources
      */
     private buildDataSourcesTable(dataSources: DataSource[]) {
+      const tableBody = document.querySelector('#dataSourcesTable > tbody');
+      if (!tableBody) {
+        return;
+      }
+
       // Clear the table first.
-      this._$('#dataSourcesTable > tbody tr').remove();
-      const dataSourcesTable = this._$('#dataSourcesTable > tbody')[0];
+      tableBody.innerHTML = '';
 
       // Add an entry to the dataSources table for each dataSource.
       for (const dataSource of dataSources) {
-        // @ts-ignore
-        const newRow = dataSourcesTable.insertRow(dataSourcesTable.rows.length);
-        const nameCell = newRow.insertCell(0);
-        const refreshCell = newRow.insertCell(1);
-        const infoCell = newRow.insertCell(2);
+        const newRow = document.createElement('tr');
+        const nameCell = document.createElement('td');
+        const refreshCell = document.createElement('td');
+        const infoCell = document.createElement('td');
 
         const refreshButton = document.createElement('button');
         refreshButton.innerHTML = 'Refresh Now';
@@ -126,16 +147,22 @@ import { DataSource } from '@tableau/extensions-api-types';
         refreshButton.addEventListener('click', () => DataSources.refreshDataSource(dataSource));
 
         const infoSpan = document.createElement('span');
-        infoSpan.className = 'glyphicon glyphicon-info-sign';
+        infoSpan.className = 'bi bi-info-circle';  // Using Bootstrap Icons instead of Glyphicons
+        infoSpan.style.cursor = 'pointer';  // Make it clear this is clickable
         infoSpan.addEventListener('click', () => this.showModal(dataSource));
 
-        nameCell.innerHTML = dataSource.name;
+        nameCell.textContent = dataSource.name;
         refreshCell.appendChild(refreshButton);
         infoCell.appendChild(infoSpan);
+
+        newRow.appendChild(nameCell);
+        newRow.appendChild(refreshCell);
+        newRow.appendChild(infoCell);
+        tableBody.appendChild(newRow);
       }
     }
   }
 
   console.log('Initializing DataSources extension.');
-  await new DataSources($).initialize();
+  await new DataSources().initialize();
 })();
